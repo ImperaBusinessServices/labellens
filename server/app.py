@@ -10,11 +10,13 @@ Run locally with `flask run` or `python app.py` (see README.md).
 
 import base64
 import binascii
+import hmac
 import logging
 import os
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 import anthropic
 
@@ -50,6 +52,12 @@ app.config["MAX_CONTENT_LENGTH"] = 7 * 1024 * 1024
 
 DISCLAIMER = "This is general information, not medical advice."
 
+# Shared secret the iOS app must present so strangers who find the public
+# EC2 URL can't spend our Anthropic money. Set LABELLENS_SHARED_SECRET in the
+# environment (and the same value in the app). If it's unset the endpoint is
+# locked down (every request gets 401) rather than left open by accident.
+SHARED_SECRET = os.environ.get("LABELLENS_SHARED_SECRET", "")
+
 ALLOWED_IMAGE_MEDIA_TYPES = {
     "image/jpeg",
     "image/png",
@@ -75,8 +83,25 @@ def get_anthropic_client():
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
         # anthropic.Anthropic() reads ANTHROPIC_API_KEY from the environment
         # on its own; we deliberately do not pass the value through our code.
-        _anthropic_client = anthropic.Anthropic()
+        # Keep the server-side wall-clock inside what the phone will wait for.
+        # The iOS URLSession client gives up after ~60s; the SDK default is a
+        # 10-minute timeout with 2 retries (~30 min worst case), which would
+        # pin a worker long after the phone has already stopped listening.
+        _anthropic_client = anthropic.Anthropic(timeout=25.0, max_retries=1)
     return _anthropic_client
+
+
+def is_authorized(req):
+    """True only if the request carries the correct shared secret. Uses a
+    constant-time compare so timing can't be used to guess the secret."""
+    if not SHARED_SECRET:
+        return False
+    header = req.headers.get("Authorization", "")
+    prefix = "Bearer "
+    if not header.startswith(prefix):
+        return False
+    presented = header[len(prefix):]
+    return hmac.compare_digest(presented, SHARED_SECRET)
 
 
 # --------------------------------------------------------------------------
@@ -159,6 +184,9 @@ def error_response(message, status_code):
 
 @app.route("/verdict", methods=["POST"])
 def verdict():
+    if not is_authorized(request):
+        return error_response("Unauthorized.", 401)
+
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return error_response("Request body must be JSON.", 400)
@@ -184,6 +212,16 @@ def verdict():
         candidate_media_type = header[len("data:"):]
         if candidate_media_type in ALLOWED_IMAGE_MEDIA_TYPES:
             media_type = candidate_media_type
+        else:
+            # A data-URL header was present but names a type Claude won't
+            # accept -- reject clearly here instead of silently relabeling it
+            # jpeg and getting a confusing error back from the vision API.
+            return error_response("Unsupported image type.", 400)
+
+    # Some base64 encoders wrap lines at 76 chars; validate=True rejects any
+    # whitespace, so strip it first. The real iOS client sends a single line,
+    # but this keeps the manual README test (and other callers) from failing.
+    raw_b64 = "".join(raw_b64.split())
 
     try:
         decoded = base64.b64decode(raw_b64, validate=True)
@@ -322,8 +360,13 @@ def method_not_allowed(_e):
 
 @app.errorhandler(Exception)
 def handle_unexpected_error(e):
-    # Catch-all so we never leak a stack trace or internal exception text
-    # to the client. Flask's own HTTP exceptions are handled above.
+    # Let real HTTP exceptions (e.g. 413 Request Entity Too Large from
+    # MAX_CONTENT_LENGTH, or 400/415) reach the client with their true status
+    # code instead of being masked as a generic 500. Without this, an oversized
+    # upload returns a misleading "Something went wrong." 500.
+    if isinstance(e, HTTPException):
+        return error_response(e.description or e.name, e.code)
+    # Catch-all so we never leak a stack trace or internal exception text.
     logger.exception("Unhandled error while processing request")
     return error_response("Something went wrong.", 500)
 
