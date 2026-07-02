@@ -8,16 +8,20 @@ import SwiftUI
 @main
 struct LabelLensApp: App {
   private let wearables: WearablesInterface
+  private let configureFailed: Bool
   @State private var appFlowController: AppFlowController
 
   init() {
+    var failed = false
     do {
       try Wearables.configure()
     } catch {
+      failed = true
       #if DEBUG
       NSLog("[LabelLens] Failed to configure Wearables SDK: \(error)")
       #endif
     }
+    self.configureFailed = failed
     let wearables = Wearables.shared
     self.wearables = wearables
     self._appFlowController = State(wrappedValue: AppFlowController(wearables: wearables))
@@ -25,18 +29,30 @@ struct LabelLensApp: App {
 
   var body: some Scene {
     WindowGroup {
-      // The phone-side window is just the companion/setup screen for v1
-      // (fill in HealthProfile once). The actual "app" experience for a
-      // scan renders on the glasses lens via DisplayService/AppFlowController.
-      ProfileSetupView()
-        .task {
-          await appFlowController.start()
+      if configureFailed {
+        // Don't silently proceed on an unconfigured SDK (every glasses call
+        // would fail with no explanation). Tell the user instead.
+        VStack(spacing: 12) {
+          Text("Setup problem").font(.headline)
+          Text("LabelLens couldn't start its glasses connection. Please restart the app.")
+            .multilineTextAlignment(.center)
+            .foregroundColor(.secondary)
         }
+        .padding()
+      } else {
+        // The phone-side window is just the companion/setup screen for v1
+        // (fill in HealthProfile once). The actual "app" experience for a
+        // scan renders on the glasses lens via DisplayService/AppFlowController.
+        ProfileSetupView()
+          .task {
+            await appFlowController.start()
+          }
 
-      // Mirrors the grounded RegistrationView pattern: an invisible view
-      // whose only job is to catch the MWDAT registration deep-link
-      // callback and hand it to the SDK.
-      RegistrationView(wearables: wearables)
+        // Mirrors the grounded RegistrationView pattern: an invisible view
+        // whose only job is to catch the MWDAT registration deep-link
+        // callback and hand it to the SDK.
+        RegistrationView(wearables: wearables)
+      }
     }
   }
 }

@@ -37,6 +37,12 @@ struct ProfileSetupView: View {
       }
       .navigationTitle("LabelLens Profile")
       .onAppear(perform: load)
+      // Clear the "Saved." confirmation once the user edits again, so it
+      // never implies unsaved edits are already saved.
+      .onChange(of: allergiesText) { didSave = false }
+      .onChange(of: medicationsText) { didSave = false }
+      .onChange(of: conditionsText) { didSave = false }
+      .onChange(of: dietGoalsText) { didSave = false }
     }
   }
 
