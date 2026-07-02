@@ -1,0 +1,122 @@
+# DRAFT / Phase 1 scaffolding — NOT turnkey-ready.
+#
+# What this workflow is FOR (once bootstrapped):
+#   Every push to main builds the LabelLens iOS app on a GitHub-hosted
+#   macOS runner, signs it using certificates/profiles stored in a private
+#   "match" git repo, and uploads the resulting build to TestFlight.
+#
+# What you MUST do before this workflow can succeed (one-time, on a Mac
+# you borrow/rent, or via a manual bootstrap run — see
+# ios/README-signing.md, to be written separately):
+#   1. Create the private git repo that will hold encrypted signing
+#      certs/profiles (referenced below as MATCH_GIT_URL).
+#   2. Run `fastlane match appstore` WITHOUT --readonly one time, from a
+#      real Mac (or a temporary CI job with readonly:false), so that
+#      match actually generates and pushes certs/profiles into that repo.
+#      This workflow intentionally runs match in --readonly mode, so it
+#      can only ever CONSUME certs that already exist — it will fail on
+#      a repo that has never been bootstrapped.
+#   3. Create an App Store Connect API key (Users and Access > Keys in
+#      App Store Connect) and store its Key ID, Issuer ID, and the
+#      downloaded .p8 file contents as GitHub Actions secrets.
+#   4. Add all secrets referenced below (Settings > Secrets and
+#      variables > Actions) to this repo.
+#
+# Until all four steps above are done, treat this file as documentation
+# of the intended pipeline, not a working pipeline.
+
+name: iOS TestFlight (DRAFT)
+
+on:
+  push:
+    branches: [main]
+  # Allows manually triggering a run from the GitHub Actions tab for testing.
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    name: Build, sign, and upload to TestFlight
+    runs-on: macos-14 # DRAFT: pin to whatever macOS/Xcode combo LabelLens actually needs.
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: ios
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      # DRAFT: pick the Xcode version LabelLens targets once the iOS app
+      # exists. xcode-select -p on a real Mac (during bootstrap) will tell
+      # you which versions are actually available on macos-14 runners.
+      - name: Select Xcode version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.0"
+
+      - name: Set up Ruby (for fastlane/bundler)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Install fastlane
+        run: |
+          gem install bundler
+          bundle install || gem install fastlane
+
+      # --- Signing -------------------------------------------------------
+      # readonly: true means this job only fetches certs/profiles that
+      # already exist in the match git repo. It will NOT create anything.
+      # See the big comment at the top of this file for the one-time
+      # bootstrap step that must happen first, from a non-readonly run.
+      - name: Fetch signing certs and profiles (fastlane match, readonly)
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+        run: bundle exec fastlane match appstore --readonly
+
+      # --- Build -----------------------------------------------------------
+      # DRAFT placeholder: real lane needs a scheme name, export options
+      # plist, and a build number bump once the Xcode project exists.
+      - name: Build and archive app
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+        run: bundle exec fastlane build_release
+
+      # --- Upload ------------------------------------------------------
+      # DRAFT: fastlane pilot (part of the fastlane suite) uploads a
+      # built .ipa to TestFlight. This step is combined into the
+      # `build_release` lane in the Fastfile below via `upload_to_testflight`,
+      # so this step is left here only as a fallback/manual alternative
+      # using altool directly, in case the Fastfile lane needs to be split
+      # apart later (e.g. to build once and upload separately).
+      # - name: Upload to TestFlight (fallback via altool)
+      #   env:
+      #     APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      #     APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      #     APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+      #   run: |
+      #     xcrun altool --upload-app \
+      #       --type ios \
+      #       --file build/LabelLens.ipa \
+      #       --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+      #       --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
+      - name: Upload build artifacts (for debugging failed runs)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs
+          path: ios/**/*.log
+          if-no-files-found: ignore

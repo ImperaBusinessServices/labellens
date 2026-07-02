@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Standard iOS keys -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>LabelLens</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+
+	<!-- Phone-side camera use: LabelLens's primary capture path is the
+	     glasses camera via MWDATCamera, but the phone app may also preview
+	     or use the phone camera in a future iteration, so this description
+	     is required by iOS regardless. -->
+	<key>NSCameraUsageDescription</key>
+	<string>LabelLens uses the camera to read product and ingredient labels so it can check them against your health profile.</string>
+
+	<!-- Required for DAT to discover/connect to the paired glasses. -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Needed to connect to your Meta Ray-Ban Display glasses.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This allows your phone to find and connect to your glasses over Wi-Fi.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_bonjour._tcp</string>
+	</array>
+
+	<!-- DAT background modes: bluetooth for the device session, processing
+	     for camera/display capability work, external-accessory for the
+	     Display capability (per Meta's display-access skill doc). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
+		<string>external-accessory</string>
+	</array>
+
+	<!-- Required for the Display capability (per Meta's display-access
+	     skill doc: UISupportedExternalAccessoryProtocols must include
+	     com.meta.ar.wearable). -->
+	<key>UISupportedExternalAccessoryProtocols</key>
+	<array>
+		<string>com.meta.ar.wearable</string>
+	</array>
+
+	<!-- Meta Wearables Device Access Toolkit registration.
+	     Values below are the real values already registered for this
+	     project in Meta's Wearables Developer Center. -->
+	<key>MWDAT</key>
+	<dict>
+		<!-- NOTE: unlike Meta's sample apps (which use a bare custom URL
+		     scheme like "cameraaccess://"), this project is registered
+		     with a full https AppLink URL, which needs an Associated
+		     Domains entitlement (not a CFBundleURLTypes/CFBundleURLSchemes
+		     entry - "https" is a system-reserved scheme apps can't claim
+		     that way) for .onOpenURL to receive this callback. See
+		     LabelLens.entitlements (applinks:remagent001.github.io) - it
+		     still needs to be wired into the Xcode project's Signing &
+		     Capabilities once that project exists, plus a hosted
+		     apple-app-site-association file, and confirmed on a real
+		     device, since none of that was covered by the grounded sample
+		     code (which only showed custom URL schemes). -->
+		<key>AppLinkURLScheme</key>
+		<string>https://remagent001.github.io/glass-apps/labellens</string>
+		<key>MetaAppID</key>
+		<string>4433927443527620</string>
+		<key>ClientToken</key>
+		<string>AR|4433927443527620|b9e7e34f65bfeb78f2dacf5d4ce66f7c</string>
+		<!-- Resolves to the Xcode build setting DEVELOPMENT_TEAM at build
+		     time. Real Apple Developer Team ID for this project: W876TWB5KV
+		     - set that as DEVELOPMENT_TEAM in the Xcode project's build
+		     settings / signing config, not here. -->
+		<key>TeamID</key>
+		<string>$(DEVELOPMENT_TEAM)</string>
+		<!-- Required for Display-capability apps per Meta's display-access
+		     skill doc. -->
+		<key>DAMEnabled</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

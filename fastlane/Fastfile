@@ -1,0 +1,64 @@
+# DRAFT / Phase 1 scaffolding — NOT turnkey-ready.
+#
+# This Fastfile is written to match .github/workflows/ios-testflight.yml.
+# It will not run successfully yet:
+#   - There is no Xcode project/workspace/scheme for it to build
+#     (that shows up in ios/ in a later phase).
+#   - The `match` git repo referenced via ENV["MATCH_GIT_URL"] has not
+#     been bootstrapped yet (see the comment block at the top of
+#     .github/workflows/ios-testflight.yml for the one-time setup step).
+#   - No GitHub Actions secrets exist yet for MATCH_PASSWORD,
+#     APP_STORE_CONNECT_API_KEY_ID, etc.
+#
+# Once those three things exist, `fastlane build_release` (called by the
+# GitHub Actions workflow) should build, sign, and upload a build to
+# TestFlight with no further changes needed here.
+
+default_platform(:ios)
+
+platform :ios do
+  # Shared: builds an App Store Connect API key object from env vars/secrets.
+  # Using an API key (instead of an Apple ID + password + 2FA) is what
+  # makes unattended CI builds possible.
+  private_lane :app_store_connect_key do
+    app_store_connect_api_key(
+      key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"],
+      issuer_id: ENV["APP_STORE_CONNECT_API_ISSUER_ID"],
+      key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"],
+      is_key_content_base64: true
+    )
+  end
+
+  desc "Fetch (readonly) or create signing certs/profiles via fastlane match"
+  lane :sync_signing do
+    match(
+      type: "appstore",
+      readonly: true, # DRAFT: flip to false ONLY for the one-time manual bootstrap run.
+      git_url: ENV["MATCH_GIT_URL"],
+      git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"], # only needed for private HTTPS repos
+      app_identifier: ["com.steelblade.labellens"]
+    )
+  end
+
+  desc "Build, sign, and upload a release build to TestFlight"
+  lane :build_release do
+    app_store_connect_key
+    sync_signing
+
+    # DRAFT placeholder values — fill in real scheme/workspace names once
+    # the Xcode project exists in ios/.
+    build_app(
+      workspace: "LabelLens.xcworkspace",
+      scheme: "LabelLens",
+      export_method: "app-store",
+      output_directory: "build",
+      output_name: "LabelLens.ipa"
+    )
+
+    upload_to_testflight(
+      api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+  end
+end

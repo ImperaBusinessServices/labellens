@@ -1,0 +1,12 @@
+# DRAFT / Phase 1 scaffolding.
+#
+# These are stable identifiers (not secrets) for Keith's already-registered
+# app and Apple Developer team, so it's safe to commit them in plain text.
+
+app_identifier("com.steelblade.labellens")
+team_id("W876TWB5KV")
+
+# Apple ID email is intentionally NOT set here. When using an App Store
+# Connect API key (as this project does — see fastlane/Fastfile and
+# .github/workflows/ios-testflight.yml), fastlane authenticates with the
+# key instead of an Apple ID + password, so no apple_id() line is needed.

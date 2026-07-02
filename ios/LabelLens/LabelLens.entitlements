@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required so iOS treats https://remagent001.github.io/glass-apps/labellens
+	     (the AppLinkURLScheme registered for this app in the Meta Wearables
+	     Developer Center, see Info.plist) as a universal link into this app,
+	     letting LabelLensApp.swift's RegistrationView.onOpenURL receive the
+	     MWDAT registration callback. Unlike a bare custom URL scheme
+	     ("cameraaccess://" in Meta's sample apps), an https AppLink needs
+	     this Associated Domains entitlement - a bare CFBundleURLTypes/
+	     CFBundleURLSchemes entry would NOT work here since "https" is a
+	     system-reserved scheme apps can't claim that way.
+
+	     TODO once there's an Xcode project (see README "Status"): add this
+	     file under Signing & Capabilities > Associated Domains, and host an
+	     apple-app-site-association file at
+	     https://remagent001.github.io/.well-known/apple-app-site-association
+	     (or /glass-apps/labellens/.well-known/...) that lists this app's
+	     Team ID (W876TWB5KV) + bundle ID under "applinks" - iOS won't treat
+	     the domain as a universal link without that file being reachable.
+	     Confirm .onOpenURL actually fires on a real device once both pieces
+	     are in place; this wasn't covered by the grounded sample code. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:remagent001.github.io</string>
+	</array>
+</dict>
+</plist>
