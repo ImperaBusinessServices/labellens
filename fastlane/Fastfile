@@ -46,9 +46,10 @@ platform :ios do
     sync_signing
 
     # DRAFT placeholder values — fill in real scheme/workspace names once
-    # the Xcode project exists in ios/.
+    # the Xcode project exists in ios/. Path is relative to the repo root
+    # (fastlane runs from there), so it includes the ios/ prefix.
     build_app(
-      workspace: "LabelLens.xcworkspace",
+      workspace: "ios/LabelLens.xcworkspace",
       scheme: "LabelLens",
       export_method: "app-store",
       output_directory: "build",

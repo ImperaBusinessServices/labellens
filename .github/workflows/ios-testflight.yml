@@ -39,9 +39,23 @@ jobs:
     runs-on: macos-14 # DRAFT: pin to whatever macOS/Xcode combo LabelLens actually needs.
     timeout-minutes: 60
 
-    defaults:
-      run:
-        working-directory: ios
+    # fastlane resolves its config from ./fastlane, and this repo keeps
+    # fastlane/ at the root (next to ios/), so DO NOT set a working-directory
+    # of ios here - that was why every fastlane step failed with
+    # "Could not find Fastfile". All steps run from the repo root.
+
+    # Signing + App Store Connect secrets, hoisted to job level so EVERY step
+    # (both the readonly match sync inside build_release and any future step)
+    # sees them. In particular MATCH_GIT_BASIC_AUTHORIZATION must be present in
+    # the build step, since build_release -> sync_signing clones the private
+    # match repo again.
+    env:
+      MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
 
     steps:
       - name: Check out repo
@@ -59,39 +73,18 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
+          # Uses the Gemfile at the repo root (added alongside this fix) so
+          # `bundle exec fastlane` resolves the pinned fastlane version.
           bundler-cache: true
-          working-directory: ios
 
-      - name: Install fastlane
-        run: |
-          gem install bundler
-          bundle install || gem install fastlane
-
-      # --- Signing -------------------------------------------------------
-      # readonly: true means this job only fetches certs/profiles that
-      # already exist in the match git repo. It will NOT create anything.
-      # See the big comment at the top of this file for the one-time
-      # bootstrap step that must happen first, from a non-readonly run.
-      - name: Fetch signing certs and profiles (fastlane match, readonly)
-        env:
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
-        run: bundle exec fastlane match appstore --readonly
-
-      # --- Build -----------------------------------------------------------
-      # DRAFT placeholder: real lane needs a scheme name, export options
+      # --- Build (+ sign + upload) ---------------------------------------
+      # build_release calls sync_signing itself (readonly match), so there's
+      # no separate match step - running match twice per build was redundant
+      # and doubled the failure surface. The one-time cert bootstrap still has
+      # to happen first (see the comment block at the top of this file).
+      # DRAFT placeholder: the real lane needs a scheme name, export options
       # plist, and a build number bump once the Xcode project exists.
-      - name: Build and archive app
-        env:
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+      - name: Build, sign, and upload app
         run: bundle exec fastlane build_release
 
       # --- Upload ------------------------------------------------------
