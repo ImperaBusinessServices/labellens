@@ -4,20 +4,22 @@ LabelLens is a personal app for Keith: point Meta Ray-Ban Display glasses at a f
 
 ## Repo layout
 
-- `ios/` — the iOS app that runs on the glasses' companion phone and drives what shows up on the display. (Not created yet — see Status below.)
-- `server/` — the backend that does the label scanning/lookup and decides the verdict. (Not created yet.)
+- `ios/LabelLens/` — the real Swift source for the iOS app that runs on the glasses' companion phone: captures a photo, calls the verdict server, and renders the result on the lens. The Swift files exist, but there is no `.xcodeproj` wrapper yet — that gets generated once this is opened in Xcode on a Mac.
+- `server/` — a working Flask app (`app.py`) that holds the Claude API key, receives a photo + health profile, and returns a structured verdict. Runnable locally today (`python app.py`), not yet deployed anywhere.
 - `.github/` — GitHub Actions automation, including the workflow that builds and ships the iOS app to TestFlight without needing a Mac (see `.github/workflows/ios-testflight.yml`).
 - `fastlane/` — configuration for fastlane, the tool that handles iOS app signing and uploading to TestFlight.
 
 ## Status: Phase 1 scaffolding — not yet buildable or runnable
 
-This repo currently only has pipeline and config scaffolding. Nothing here compiles or runs yet. Specifically:
+The real source code exists for both the app and the server, but nothing has been compiled or deployed yet. Specifically:
 
-- There is no Xcode project in `ios/` yet, so the CI workflow has nothing to build.
-- The one-time signing bootstrap (fastlane match, non-readonly) hasn't been run, so even once there's an app, the pipeline can't sign it yet.
-- There is no `server/` code yet and nothing is deployed, so there's no backend for the app to talk to.
+- `ios/LabelLens/` has real Swift files (app entry point, camera capture, glasses display rendering, networking, health profile, profile setup screen) grounded against Meta's official sample code — but there is no `.xcodeproj` yet, so nothing can compile until this is opened in Xcode on a Mac and a project is created around these files.
+- Two small pieces of the iOS code are marked with TODO comments because they couldn't be confirmed without a real compiler: the exact color-coding API for the verdict card (falls back to plain text wording for now, which works fine) and whether an icon exists for the "Scan" button (currently unset, also fine).
+- `server/app.py` is a complete, syntax-checked Flask app you can run locally right now with a real Anthropic API key in a local `.env` file — see `server/README.md`.
+- The one-time signing bootstrap (fastlane match, non-readonly) hasn't been run, so the CI pipeline can't sign/ship a build yet even once there's an Xcode project.
+- The server isn't deployed anywhere yet (Phase 3).
 
-In short: don't expect to check this out and get a working app. This is the plumbing, laid down first so later phases can plug into it.
+In short: the code is real and was checked for correctness against Meta's actual SDK, but you can't build-and-run the iOS app without a Mac, and the server isn't live yet. This is genuine Phase 1 progress, not just plumbing.
 
 ## Next steps (the plan)
 
