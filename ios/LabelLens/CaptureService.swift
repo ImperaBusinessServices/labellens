@@ -21,8 +21,14 @@ final class CaptureService {
     case sessionUnavailable
     case streamUnavailable
     case captureTriggerFailed
+    case timedOut
     case underlying(Error)
   }
+
+  /// How long to wait for the glasses to return a photo before giving up.
+  /// Prevents a permanent hang on the button-less processing screen if the
+  /// device accepts the trigger but never fires a photo/error callback.
+  private static let captureTimeoutNanos: UInt64 = 10_000_000_000  // 10s
 
   /// Opens a short-lived camera Stream on the given (already-open) shared
   /// DeviceSession, triggers a single still-photo capture, waits for the
@@ -31,13 +37,18 @@ final class CaptureService {
   /// DisplayService's shared session via `DisplayService.sharedDeviceSession()`.
   func captureSinglePhoto(session: DeviceSession) async throws -> Data {
     if session.state != .started {
+      // Capture the state stream BEFORE start(): the .started transition can
+      // land on another thread before we begin iterating, and the stream
+      // doesn't buffer past events, so subscribing after start() could hang
+      // forever. This mirrors Meta's own DeviceSessionManager sample.
+      let stateStream = session.stateStream()
       do {
         try session.start()
       } catch {
         throw CaptureError.underlying(error)
       }
       if session.state != .started {
-        for await state in session.stateStream() {
+        for await state in stateStream {
           if state == .started { break }
           if state == .stopped {
             throw CaptureError.sessionUnavailable
@@ -67,11 +78,25 @@ final class CaptureService {
     return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
       var photoToken: AnyListenerToken?
       var errorToken: AnyListenerToken?
+      var timeoutTask: Task<Void, Never>?
       var didResume = false
 
+      // The photo/error callbacks are @Sendable and fire on background
+      // threads, while the timeout and the trigger-failure path run on the
+      // main actor - so resume-once must be guarded by a lock, or two of them
+      // could both pass the check and resume the continuation twice (a crash).
+      let resumeLock = NSLock()
+
       let finish: (Result<Data, Error>) -> Void = { result in
-        guard !didResume else { return }
+        resumeLock.lock()
+        if didResume {
+          resumeLock.unlock()
+          return
+        }
         didResume = true
+        resumeLock.unlock()
+
+        timeoutTask?.cancel()
         photoToken = nil
         errorToken = nil
         continuation.resume(with: result)
@@ -84,15 +109,18 @@ final class CaptureService {
         finish(.failure(CaptureError.underlying(error)))
       }
 
+      // Fail (rather than hang forever) if the glasses accept the trigger but
+      // never call back. This lets AppFlowController's catch path run, which
+      // returns to the idle screen and stops the stream via `defer`.
+      timeoutTask = Task {
+        try? await Task.sleep(nanoseconds: CaptureService.captureTimeoutNanos)
+        finish(.failure(CaptureError.timedOut))
+      }
+
       let triggered = stream.capturePhoto(format: .jpeg)
       if !triggered {
         finish(.failure(CaptureError.captureTriggerFailed))
       }
-
-      // TODO: verify against the real MWDAT API on a Mac whether a capture
-      // timeout is needed here (e.g. the glasses never call back). No
-      // timeout API was observed in the grounded sample code, so none is
-      // added yet - add one if a real device shows it's needed.
     }
   }
 }

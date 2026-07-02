@@ -49,6 +49,18 @@ final class DisplayService {
       return
     }
 
+    // If a capability exists but is no longer started (glasses removed /
+    // disconnected out-of-band), tear it down before adding a fresh one.
+    // Calling addDisplay() on top of a stale capability leaks it and silently
+    // drops its state listener - and may throw an "already exists" error that
+    // permanently breaks sends.
+    if display != nil {
+      display?.stop()
+      display = nil
+      displayStateToken = nil
+      displayState = nil
+    }
+
     let session = try await ensureSession()
 
     let capability: Display
@@ -87,13 +99,18 @@ final class DisplayService {
     }
 
     if session.state != .started {
+      // Capture the state stream BEFORE start() - the .started transition can
+      // arrive on another thread before iteration begins and the stream
+      // doesn't buffer past events, so subscribing afterward risks a hang.
+      // Mirrors Meta's DeviceSessionManager sample.
+      let stateStream = session.stateStream()
       do {
         try session.start()
       } catch {
         throw DisplayServiceError.underlying(error)
       }
       if session.state != .started {
-        for await state in session.stateStream() {
+        for await state in stateStream {
           if state == .started { break }
           if state == .stopped { throw DisplayServiceError.sessionUnavailable }
         }
@@ -226,6 +243,9 @@ enum LabelLensScreens {
         Text(verdict.reason, style: .meta, color: .secondary)
         if let personalFlag = verdict.personalFlag {
           Text(personalFlag, style: .meta, color: .secondary)
+        }
+        if let disclaimer = verdict.disclaimer {
+          Text(disclaimer, style: .meta, color: .secondary)
         }
       }
       .padding(24)
