@@ -65,6 +65,16 @@ jobs:
         with:
           xcode-version: "16.0"
 
+      # Keith has no Mac, so there is no hand-made .xcodeproj in git. XcodeGen
+      # builds it deterministically from ios/project.yml right here, on the
+      # runner, before fastlane compiles. project.yml is the source of truth.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
       - name: Set up Ruby (for fastlane/bundler)
         uses: ruby/setup-ruby@v1
         with:

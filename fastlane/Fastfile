@@ -29,13 +29,50 @@ platform :ios do
     )
   end
 
-  desc "Fetch (readonly) or create signing certs/profiles via fastlane match"
+  desc "Fetch (readonly) signing certs/profiles via fastlane match — used by every normal build"
   lane :sync_signing do
     match(
       type: "appstore",
-      readonly: true, # DRAFT: flip to false ONLY for the one-time manual bootstrap run.
+      readonly: true, # Normal builds only CONSUME certs; bootstrap_signing creates them.
       git_url: ENV["MATCH_GIT_URL"],
       git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"], # only needed for private HTTPS repos
+      app_identifier: ["com.steelblade.labellens"]
+    )
+  end
+
+  # ONE-TIME cloud bootstrap. Run this once (via the signing-bootstrap.yml
+  # workflow) to create the distribution certificate + provisioning profile and
+  # push them, encrypted, into the private match repo. After it succeeds, every
+  # normal build uses the readonly sync_signing lane above. No Mac required:
+  # this runs on a GitHub-hosted macOS runner, authenticated entirely by an App
+  # Store Connect API key (no Apple ID password, no interactive 2FA).
+  desc "ONE-TIME: register the App ID, enable capabilities, and create+push signing assets"
+  lane :bootstrap_signing do
+    app_store_connect_key
+
+    # Ensure the App ID exists in the Developer portal AND an App Store Connect
+    # record exists for TestFlight, with the Associated Domains capability the
+    # app's entitlements declare (universal-link pairing callback). produce is
+    # not idempotent — it raises if the app already exists — so a re-run is
+    # tolerated rather than fatal.
+    begin
+      produce(
+        app_identifier: "com.steelblade.labellens",
+        app_name: "LabelLens",
+        language: "en-US",
+        enable_services: {
+          associated_domains: "on"
+        }
+      )
+    rescue => e
+      UI.important("produce step skipped (app likely already registered): #{e.message}")
+    end
+
+    match(
+      type: "appstore",
+      readonly: false, # CREATE the cert + profile and push them to the match repo.
+      git_url: ENV["MATCH_GIT_URL"],
+      git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"],
       app_identifier: ["com.steelblade.labellens"]
     )
   end

@@ -1,0 +1,75 @@
+# ONE-TIME signing bootstrap — run manually, once, from the Actions tab.
+#
+# What it does: on a GitHub-hosted macOS runner, it registers the App ID,
+# creates the iOS distribution certificate + provisioning profile, and pushes
+# them (encrypted) into the private "match" repo. After this succeeds once,
+# ios-testflight.yml can build and ship signed builds forever, and this
+# workflow never needs to run again.
+#
+# No Mac required. Authenticated entirely by an App Store Connect API key.
+#
+# Prerequisites (set as repo Actions secrets before running — see
+# ios/README-signing.md for exactly how to get each one):
+#   APP_STORE_CONNECT_API_KEY_ID       - the key's Key ID
+#   APP_STORE_CONNECT_API_ISSUER_ID    - the Issuer ID from the Keys page
+#   APP_STORE_CONNECT_API_KEY_CONTENT  - the .p8 file contents, base64-encoded
+#   MATCH_GIT_URL                      - HTTPS URL of the private match repo
+#   MATCH_GIT_BASIC_AUTHORIZATION      - base64 "user:token" for that repo
+#   MATCH_PASSWORD                     - passphrase that encrypts the match repo
+
+name: Signing bootstrap (one-time)
+
+on:
+  workflow_dispatch:
+
+# Prevent two bootstraps racing (they'd fight over the same match repo).
+concurrency:
+  group: signing-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Create and push signing assets
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.0"
+
+      - name: Set up Ruby (for fastlane/bundler)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+
+      - name: Install gems (fastlane)
+        run: bundle install
+
+      # Secrets scoped to only this step (least privilege) — the same pattern as
+      # ios-testflight.yml, so third-party actions above never see the signing
+      # material.
+      - name: Bootstrap signing (create + push certs/profiles)
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+        run: bundle exec fastlane bootstrap_signing
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-logs
+          path: |
+            fastlane/report.xml
+            *.log
+          if-no-files-found: ignore

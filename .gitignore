@@ -13,6 +13,12 @@ ios/LabelLens/Secrets.swift
 *.keychain-db
 
 # --- iOS / Xcode ---
+# The .xcodeproj is GENERATED from ios/project.yml by XcodeGen (Keith has no
+# Mac to create/maintain one by hand). It is disposable build output, so it is
+# ignored — project.yml is the source of truth, and it pins the Meta SDK
+# version directly (packages.*.exactVersion), so no committed Package.resolved
+# is needed for reproducibility.
+ios/LabelLens.xcodeproj/
 build/
 DerivedData/
 *.xcuserstate
