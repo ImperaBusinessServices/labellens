@@ -159,8 +159,16 @@ final class DisplayService {
   /// check readiness without ever reading a synchronous `.state` property
   /// off `Display` (not confirmed to exist in the grounded API).
   private func subscribeToDisplayState(_ capability: Display) {
+    // statePublisher.listen takes a @Sendable, non-isolated closure, so it
+    // can't touch the @MainActor-isolated `displayState` directly (Swift 6
+    // strict concurrency). Hop back onto the main actor to record it. The
+    // cached flag is only an optimization for attachIfNeeded()'s early return;
+    // waitUntilStarted() awaits readiness through its own separate listener,
+    // so a one-hop lag here is harmless.
     displayStateToken = capability.statePublisher.listen { [weak self] state in
-      self?.displayState = state
+      Task { @MainActor in
+        self?.displayState = state
+      }
     }
   }
 
