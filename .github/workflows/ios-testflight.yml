@@ -63,7 +63,18 @@ jobs:
       - name: Select Xcode version
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.0"
+          # macos-14 ships 16.1/16.2; the Meta SDK needs Swift 6 (Xcode 16+).
+          xcode-version: "16.2"
+
+      # Keith has no Mac, so there is no hand-made .xcodeproj in git. XcodeGen
+      # builds it deterministically from ios/project.yml right here, on the
+      # runner, before fastlane compiles. project.yml is the source of truth.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
 
       - name: Set up Ruby (for fastlane/bundler)
         uses: ruby/setup-ruby@v1

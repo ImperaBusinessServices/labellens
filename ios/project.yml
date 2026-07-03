@@ -1,0 +1,75 @@
+# XcodeGen spec for LabelLens.
+#
+# Why this file exists: Keith has no Mac, so the .xcodeproj cannot be created
+# by hand in Xcode. XcodeGen generates a fresh, deterministic LabelLens.xcodeproj
+# from THIS spec on a cloud macOS runner (or any Mac) with one command:
+#
+#     cd ios && xcodegen generate
+#
+# The generated .xcodeproj is therefore disposable and is git-ignored — this
+# YAML is the single source of truth for project structure, signing, and the
+# Meta SDK dependency. Edit this file, never the generated project.
+#
+# Package version pinning lives here (packages.*.exactVersion) instead of a
+# committed Package.resolved, because the project that would hold that resolved
+# file is itself generated.
+
+name: LabelLens
+
+options:
+  bundleIdPrefix: com.steelblade
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0" # Confirmed safe for Keith's current iPhone; the CI compile job
+                # will surface an explicit error if the Meta SDK needs higher.
+
+# Project-wide build settings applied to every target.
+settings:
+  base:
+    DEVELOPMENT_TEAM: W876TWB5KV # Steel Blade LLC — Keith's Apple Developer team.
+    SWIFT_VERSION: "6.0" # The Meta SDK's Package.swift is swift-tools 6.0.
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+
+# The Meta Wearables Device Access Toolkit, added via Swift Package Manager.
+# Pinned to an exact version so cloud builds are reproducible. The package's
+# own name is "MetaWearablesDAT"; it vends the MWDAT* product libraries.
+packages:
+  MetaWearablesDAT:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    exactVersion: "0.8.0"
+
+targets:
+  LabelLens:
+    type: application
+    platform: iOS
+    sources:
+      - path: LabelLens
+        excludes:
+          # Info.plist is wired via INFOPLIST_FILE below (not as a compiled
+          # source). Entitlements likewise via CODE_SIGN_ENTITLEMENTS. The
+          # .example is a template, and Secrets.swift is git-ignored and
+          # (re)generated at build time — exclude it from the checked-in source
+          # list so generation doesn't depend on a file that may be absent.
+          - "Info.plist"
+          - "*.entitlements"
+          - "Secrets.swift.example"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.steelblade.labellens
+        INFOPLIST_FILE: LabelLens/Info.plist
+        CODE_SIGN_ENTITLEMENTS: LabelLens/LabelLens.entitlements
+        # Don't let Xcode synthesize an Info.plist — we hand-authored one with
+        # the required MWDAT registration keys.
+        GENERATE_INFOPLIST_FILE: NO
+        # Universal-link support (Associated Domains) is declared in the
+        # entitlements file; manual signing is used so fastlane match's
+        # provisioning profile (which embeds that capability) is honored.
+        CODE_SIGN_STYLE: Manual
+    dependencies:
+      - package: MetaWearablesDAT
+        product: MWDATCore
+      - package: MetaWearablesDAT
+        product: MWDATCamera
+      - package: MetaWearablesDAT
+        product: MWDATDisplay

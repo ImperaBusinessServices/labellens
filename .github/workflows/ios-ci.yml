@@ -1,0 +1,89 @@
+# Signing-free compile check.
+#
+# What this proves: that the LabelLens Swift source actually COMPILES against
+# Meta's real MWDAT SDK (0.8.0), and that ios/project.yml generates a valid
+# Xcode project. It builds for the iOS Simulator with code signing turned off,
+# so it needs NO Apple certificates, NO App Store Connect key, and NO human in
+# the loop — it runs automatically on every push that touches the app.
+#
+# This is the check that catches "real compiler errors" without a Mac. It is
+# deliberately separate from ios-testflight.yml (which needs the one-time
+# signing bootstrap and ships a signed build to TestFlight).
+#
+# The Meta xcframeworks ship an ios-arm64_x86_64-simulator slice, which is why
+# a simulator build links cleanly without a physical device or signing.
+
+name: iOS compile check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ci.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  compile:
+    name: Compile against Meta SDK (simulator, unsigned)
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # macos-14 ships 16.1 and 16.2 (both stable); the Meta SDK needs
+          # Swift 6, i.e. Xcode 16+. Pin to a version actually present.
+          xcode-version: "16.2"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Secrets.swift is git-ignored (public repo). The compiler still needs the
+      # two symbols it defines, so write a throwaway placeholder — a compile
+      # check never talks to the real server, so dummy values are correct here.
+      - name: Write placeholder Secrets.swift
+        run: |
+          cat > ios/LabelLens/Secrets.swift <<'EOF'
+          // Placeholder written by CI for the compile check only. Not the real
+          // secret — ios-testflight.yml writes real values from Actions secrets.
+          import Foundation
+          let verdictServerURL = "https://example.invalid/verdict"
+          let verdictSharedSecret = "ci-compile-check-placeholder"
+          EOF
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      # Build for a generic simulator with signing disabled. Resolving the Meta
+      # Swift Package happens automatically here. Any real type/API error in the
+      # Swift code fails this step with a clear compiler message.
+      - name: Build (simulator, no signing)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project LabelLens.xcodeproj \
+            -scheme LabelLens \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build 2>&1 | tee xcodebuild.log
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-check-log
+          path: ios/xcodebuild.log
+          if-no-files-found: ignore
