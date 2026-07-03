@@ -45,11 +45,13 @@ platform :ios do
     app_store_connect_key
     sync_signing
 
-    # DRAFT placeholder values — fill in real scheme/workspace names once
-    # the Xcode project exists in ios/. Path is relative to the repo root
-    # (fastlane runs from there), so it includes the ios/ prefix.
+    # DRAFT placeholder values — fill in the real scheme name once the Xcode
+    # project exists in ios/. Uses project: (not workspace:) because the plan
+    # is a Swift-Package-Manager-based .xcodeproj — a standalone .xcworkspace
+    # only exists with CocoaPods, which this project doesn't use. Path is
+    # relative to the repo root (fastlane runs from there).
     build_app(
-      workspace: "ios/LabelLens.xcworkspace",
+      project: "ios/LabelLens.xcodeproj",
       scheme: "LabelLens",
       export_method: "app-store",
       output_directory: "build",
