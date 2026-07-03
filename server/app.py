@@ -101,7 +101,11 @@ def is_authorized(req):
     if not header.startswith(prefix):
         return False
     presented = header[len(prefix):]
-    return hmac.compare_digest(presented, SHARED_SECRET)
+    # Compare as bytes: compare_digest raises TypeError on non-ASCII strings,
+    # which an attacker could trigger at will to generate 500s.
+    return hmac.compare_digest(
+        presented.encode("utf-8"), SHARED_SECRET.encode("utf-8")
+    )
 
 
 # --------------------------------------------------------------------------
@@ -220,8 +224,10 @@ def verdict():
 
     # Some base64 encoders wrap lines at 76 chars; validate=True rejects any
     # whitespace, so strip it first. The real iOS client sends a single line,
-    # but this keeps the manual README test (and other callers) from failing.
-    raw_b64 = "".join(raw_b64.split())
+    # so gate on a cheap containment check - the strip rebuilds a multi-MB
+    # string and shouldn't run on every request just to support manual tests.
+    if "\n" in raw_b64 or "\r" in raw_b64 or " " in raw_b64 or "\t" in raw_b64:
+        raw_b64 = "".join(raw_b64.split())
 
     try:
         decoded = base64.b64decode(raw_b64, validate=True)
@@ -365,7 +371,10 @@ def handle_unexpected_error(e):
     # code instead of being masked as a generic 500. Without this, an oversized
     # upload returns a misleading "Something went wrong." 500.
     if isinstance(e, HTTPException):
-        return error_response(e.description or e.name, e.code)
+        # Keep a lightweight log line (probing/oversized uploads shouldn't be
+        # invisible), and guard against a bare HTTPException with no code.
+        logger.info("HTTP error %s on %s", e.code, request.path)
+        return error_response(e.description or e.name, e.code or 500)
     # Catch-all so we never leak a stack trace or internal exception text.
     logger.exception("Unhandled error while processing request")
     return error_response("Something went wrong.", 500)
