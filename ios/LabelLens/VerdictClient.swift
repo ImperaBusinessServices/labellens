@@ -21,16 +21,10 @@ enum VerdictClientError: Error {
   case encodingFailure(Error)
 }
 
-/// Placeholder backend address. Keith: replace this with your EC2 box's
-/// address once it's up (e.g. "https://12.34.56.78/verdict" or a real
-/// domain). Left as a plain constant (not a Info.plist key) so it's easy to
-/// find and edit in one place for v1.
-let verdictServerURL = "https://REPLACE-WITH-YOUR-EC2-ADDRESS.example.com/verdict"
-
-/// Shared secret that must match LABELLENS_SHARED_SECRET on the server.
-/// Keith: paste the SAME long random value you set in the server's .env here.
-/// Sent as "Authorization: Bearer <secret>" so strangers can't hit the endpoint.
-let verdictSharedSecret = "REPLACE-WITH-YOUR-SHARED-SECRET"
+// verdictServerURL and verdictSharedSecret live in Secrets.swift — a
+// git-ignored file, because this repo is PUBLIC and the real secret must
+// never be committed. Copy Secrets.swift.example to Secrets.swift and fill
+// in the real values (CI writes it from GitHub Actions secrets instead).
 
 /// Plain URLSession HTTP client. Sends the captured label photo (as base64
 /// inside a JSON body, to keep this simple for v1 rather than building
@@ -56,9 +50,10 @@ struct VerdictClient {
   }
 
   func getVerdict(photoJPEG: Data, healthProfile: HealthProfile) async throws -> Verdict {
-    // Catch the un-replaced placeholder early with a clear error, instead of
-    // letting it parse as a valid URL and fail later with an opaque DNS error.
+    // Catch un-replaced placeholders early with a clear error, instead of an
+    // opaque DNS failure (URL) or a mystery 401 from the server (secret).
     guard !verdictServerURL.contains("REPLACE-WITH"),
+          !verdictSharedSecret.contains("REPLACE-WITH"),
           let url = URL(string: verdictServerURL) else {
       throw VerdictClientError.invalidServerURL
     }

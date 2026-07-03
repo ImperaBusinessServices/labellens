@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Real app config (server URL + shared secret) — this repo is public, so the
+# real file stays local-only; commit only Secrets.swift.example.
+ios/LabelLens/Secrets.swift
 *.p8
 *.p12
 *.cer

@@ -12,16 +12,15 @@ struct LabelLensApp: App {
   @State private var appFlowController: AppFlowController
 
   init() {
-    var failed = false
     do {
       try Wearables.configure()
+      configureFailed = false
     } catch {
-      failed = true
+      configureFailed = true
       #if DEBUG
       NSLog("[LabelLens] Failed to configure Wearables SDK: \(error)")
       #endif
     }
-    self.configureFailed = failed
     let wearables = Wearables.shared
     self.wearables = wearables
     self._appFlowController = State(wrappedValue: AppFlowController(wearables: wearables))
@@ -29,30 +28,35 @@ struct LabelLensApp: App {
 
   var body: some Scene {
     WindowGroup {
-      if configureFailed {
-        // Don't silently proceed on an unconfigured SDK (every glasses call
-        // would fail with no explanation). Tell the user instead.
-        VStack(spacing: 12) {
-          Text("Setup problem").font(.headline)
-          Text("LabelLens couldn't start its glasses connection. Please restart the app.")
+      // The phone-side window is just the companion/setup screen for v1
+      // (fill in HealthProfile once). The actual "app" experience for a
+      // scan renders on the glasses lens via DisplayService/AppFlowController.
+      // Profile editing needs no SDK, so it stays available even when
+      // configure() failed - only the glasses flow is skipped, with a
+      // visible banner instead of a silent failure or a dead-end screen.
+      VStack(spacing: 0) {
+        if configureFailed {
+          Text("Glasses connection couldn't start - scanning is unavailable. Quit and reopen the app to retry.")
+            .font(.footnote)
             .multilineTextAlignment(.center)
-            .foregroundColor(.secondary)
+            .foregroundColor(.white)
+            .padding(10)
+            .frame(maxWidth: .infinity)
+            .background(Color.red.opacity(0.85))
         }
-        .padding()
-      } else {
-        // The phone-side window is just the companion/setup screen for v1
-        // (fill in HealthProfile once). The actual "app" experience for a
-        // scan renders on the glasses lens via DisplayService/AppFlowController.
         ProfileSetupView()
           .task {
-            await appFlowController.start()
+            if !configureFailed {
+              await appFlowController.start()
+            }
           }
-
-        // Mirrors the grounded RegistrationView pattern: an invisible view
-        // whose only job is to catch the MWDAT registration deep-link
-        // callback and hand it to the SDK.
-        RegistrationView(wearables: wearables)
       }
+
+      // Mirrors the grounded RegistrationView pattern: an invisible view
+      // whose only job is to catch the MWDAT registration deep-link
+      // callback and hand it to the SDK. Kept mounted unconditionally so a
+      // pairing callback is never dropped.
+      RegistrationView(wearables: wearables)
     }
   }
 }

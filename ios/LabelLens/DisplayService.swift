@@ -55,10 +55,15 @@ final class DisplayService {
     // drops its state listener - and may throw an "already exists" error that
     // permanently breaks sends.
     if display != nil {
-      display?.stop()
-      display = nil
-      displayStateToken = nil
-      displayState = nil
+      tearDownDisplayCapability()
+      // The session that hosted the stale capability is usually dead too;
+      // keeping it cached would make ensureSession() hand back a stopped
+      // session forever (recovery would never succeed). Drop it unless it's
+      // still genuinely running, so ensureSession() creates a fresh one.
+      if let session = deviceSession, session.state != .started {
+        session.stop()
+        deviceSession = nil
+      }
     }
 
     let session = try await ensureSession()
@@ -134,10 +139,17 @@ final class DisplayService {
   }
 
   func detach() {
-    display?.stop()
+    tearDownDisplayCapability()
     deviceSession?.stop()
-    display = nil
     deviceSession = nil
+  }
+
+  /// Single place that knows how to tear down the Display capability, shared
+  /// by detach() and attachIfNeeded()'s stale-capability recovery so the two
+  /// paths can't drift apart.
+  private func tearDownDisplayCapability() {
+    display?.stop()
+    display = nil
     displayStateToken = nil
     displayState = nil
   }

@@ -76,51 +76,84 @@ final class CaptureService {
     }
 
     return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
-      var photoToken: AnyListenerToken?
-      var errorToken: AnyListenerToken?
-      var timeoutTask: Task<Void, Never>?
-      var didResume = false
+      let completion = CaptureCompletion(continuation: continuation)
 
-      // The photo/error callbacks are @Sendable and fire on background
-      // threads, while the timeout and the trigger-failure path run on the
-      // main actor - so resume-once must be guarded by a lock, or two of them
-      // could both pass the check and resume the continuation twice (a crash).
-      let resumeLock = NSLock()
-
-      let finish: (Result<Data, Error>) -> Void = { result in
-        resumeLock.lock()
-        if didResume {
-          resumeLock.unlock()
-          return
-        }
-        didResume = true
-        resumeLock.unlock()
-
-        timeoutTask?.cancel()
-        photoToken = nil
-        errorToken = nil
-        continuation.resume(with: result)
+      let photoToken = stream.photoDataPublisher.listen { data in
+        completion.finish(.success(data.data))
       }
-
-      photoToken = stream.photoDataPublisher.listen { data in
-        finish(.success(data.data))
+      let errorToken = stream.errorPublisher.listen { error in
+        completion.finish(.failure(CaptureError.underlying(error)))
       }
-      errorToken = stream.errorPublisher.listen { error in
-        finish(.failure(CaptureError.underlying(error)))
-      }
+      completion.store(photoToken: photoToken, errorToken: errorToken)
 
       // Fail (rather than hang forever) if the glasses accept the trigger but
       // never call back. This lets AppFlowController's catch path run, which
       // returns to the idle screen and stops the stream via `defer`.
-      timeoutTask = Task {
+      completion.storeTimeout(Task {
         try? await Task.sleep(nanoseconds: CaptureService.captureTimeoutNanos)
-        finish(.failure(CaptureError.timedOut))
-      }
+        guard !Task.isCancelled else { return }
+        completion.finish(.failure(CaptureError.timedOut))
+      })
 
       let triggered = stream.capturePhoto(format: .jpeg)
       if !triggered {
-        finish(.failure(CaptureError.captureTriggerFailed))
+        completion.finish(.failure(CaptureError.captureTriggerFailed))
       }
     }
+  }
+}
+
+/// All mutable capture-completion state lives behind one lock, so the photo
+/// callback, error callback, timeout, and trigger-failure paths - which run
+/// on different threads - can never race each other or resume the
+/// continuation twice. Using a class instead of captured local vars also
+/// keeps this legal under Swift 6 strict concurrency (no mutation of
+/// captured locals from @Sendable closures).
+private final class CaptureCompletion: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didResume = false
+  private var photoToken: AnyListenerToken?
+  private var errorToken: AnyListenerToken?
+  private var timeoutTask: Task<Void, Never>?
+  private let continuation: CheckedContinuation<Data, Error>
+
+  init(continuation: CheckedContinuation<Data, Error>) {
+    self.continuation = continuation
+  }
+
+  /// Retain the listener tokens for the life of the wait (dropped in finish).
+  func store(photoToken: AnyListenerToken?, errorToken: AnyListenerToken?) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !didResume else { return }
+    self.photoToken = photoToken
+    self.errorToken = errorToken
+  }
+
+  /// Retain the timeout task so finish() can cancel it; if the capture
+  /// already finished before this is called, cancel the task immediately.
+  func storeTimeout(_ task: Task<Void, Never>) {
+    lock.lock()
+    let alreadyDone = didResume
+    if !alreadyDone { timeoutTask = task }
+    lock.unlock()
+    if alreadyDone { task.cancel() }
+  }
+
+  /// Resume the continuation exactly once; later calls are no-ops.
+  func finish(_ result: Result<Data, Error>) {
+    lock.lock()
+    if didResume {
+      lock.unlock()
+      return
+    }
+    didResume = true
+    let task = timeoutTask
+    photoToken = nil
+    errorToken = nil
+    timeoutTask = nil
+    lock.unlock()
+    task?.cancel()
+    continuation.resume(with: result)
   }
 }
