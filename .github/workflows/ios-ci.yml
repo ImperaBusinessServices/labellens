@@ -40,7 +40,9 @@ jobs:
       - name: Select Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.0"
+          # macos-14 ships 16.1 and 16.2 (both stable); the Meta SDK needs
+          # Swift 6, i.e. Xcode 16+. Pin to a version actually present.
+          xcode-version: "16.2"
 
       - name: Install XcodeGen
         run: brew install xcodegen
