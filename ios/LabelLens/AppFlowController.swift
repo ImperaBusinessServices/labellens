@@ -16,6 +16,11 @@ final class AppFlowController {
 
   private var currentVerdict: Verdict?
 
+  /// Guards against a second scan starting while one is already running (a
+  /// double "Scan" tap, or tapping "Next" mid-scan). Without it, two flows
+  /// would open duplicate camera streams and race each other's screen sends.
+  private var isScanning = false
+
   init(wearables: WearablesInterface) {
     self.wearables = wearables
     self.captureService = CaptureService()
@@ -37,6 +42,13 @@ final class AppFlowController {
   }
 
   private func handleScanTapped() async {
+    // Ignore taps that arrive while a scan is already in flight. Safe on the
+    // @MainActor: the guard and the flag set run without suspension between
+    // them, so two enqueued tasks can't both pass.
+    guard !isScanning else { return }
+    isScanning = true
+    defer { isScanning = false }
+
     await sendSafely(LabelLensScreens.processing())
 
     do {

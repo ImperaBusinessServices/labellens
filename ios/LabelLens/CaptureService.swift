@@ -21,8 +21,14 @@ final class CaptureService {
     case sessionUnavailable
     case streamUnavailable
     case captureTriggerFailed
+    case timedOut
     case underlying(Error)
   }
+
+  /// How long to wait for the glasses to return a photo before giving up.
+  /// Prevents a permanent hang on the button-less processing screen if the
+  /// device accepts the trigger but never fires a photo/error callback.
+  private static let captureTimeoutNanos: UInt64 = 10_000_000_000  // 10s
 
   /// Opens a short-lived camera Stream on the given (already-open) shared
   /// DeviceSession, triggers a single still-photo capture, waits for the
@@ -31,13 +37,18 @@ final class CaptureService {
   /// DisplayService's shared session via `DisplayService.sharedDeviceSession()`.
   func captureSinglePhoto(session: DeviceSession) async throws -> Data {
     if session.state != .started {
+      // Capture the state stream BEFORE start(): the .started transition can
+      // land on another thread before we begin iterating, and the stream
+      // doesn't buffer past events, so subscribing after start() could hang
+      // forever. This mirrors Meta's own DeviceSessionManager sample.
+      let stateStream = session.stateStream()
       do {
         try session.start()
       } catch {
         throw CaptureError.underlying(error)
       }
       if session.state != .started {
-        for await state in session.stateStream() {
+        for await state in stateStream {
           if state == .started { break }
           if state == .stopped {
             throw CaptureError.sessionUnavailable
@@ -65,34 +76,84 @@ final class CaptureService {
     }
 
     return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
-      var photoToken: AnyListenerToken?
-      var errorToken: AnyListenerToken?
-      var didResume = false
+      let completion = CaptureCompletion(continuation: continuation)
 
-      let finish: (Result<Data, Error>) -> Void = { result in
-        guard !didResume else { return }
-        didResume = true
-        photoToken = nil
-        errorToken = nil
-        continuation.resume(with: result)
+      let photoToken = stream.photoDataPublisher.listen { data in
+        completion.finish(.success(data.data))
       }
+      let errorToken = stream.errorPublisher.listen { error in
+        completion.finish(.failure(CaptureError.underlying(error)))
+      }
+      completion.store(photoToken: photoToken, errorToken: errorToken)
 
-      photoToken = stream.photoDataPublisher.listen { data in
-        finish(.success(data.data))
-      }
-      errorToken = stream.errorPublisher.listen { error in
-        finish(.failure(CaptureError.underlying(error)))
-      }
+      // Fail (rather than hang forever) if the glasses accept the trigger but
+      // never call back. This lets AppFlowController's catch path run, which
+      // returns to the idle screen and stops the stream via `defer`.
+      completion.storeTimeout(Task {
+        try? await Task.sleep(nanoseconds: CaptureService.captureTimeoutNanos)
+        guard !Task.isCancelled else { return }
+        completion.finish(.failure(CaptureError.timedOut))
+      })
 
       let triggered = stream.capturePhoto(format: .jpeg)
       if !triggered {
-        finish(.failure(CaptureError.captureTriggerFailed))
+        completion.finish(.failure(CaptureError.captureTriggerFailed))
       }
-
-      // TODO: verify against the real MWDAT API on a Mac whether a capture
-      // timeout is needed here (e.g. the glasses never call back). No
-      // timeout API was observed in the grounded sample code, so none is
-      // added yet - add one if a real device shows it's needed.
     }
+  }
+}
+
+/// All mutable capture-completion state lives behind one lock, so the photo
+/// callback, error callback, timeout, and trigger-failure paths - which run
+/// on different threads - can never race each other or resume the
+/// continuation twice. Using a class instead of captured local vars also
+/// keeps this legal under Swift 6 strict concurrency (no mutation of
+/// captured locals from @Sendable closures).
+private final class CaptureCompletion: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didResume = false
+  private var photoToken: AnyListenerToken?
+  private var errorToken: AnyListenerToken?
+  private var timeoutTask: Task<Void, Never>?
+  private let continuation: CheckedContinuation<Data, Error>
+
+  init(continuation: CheckedContinuation<Data, Error>) {
+    self.continuation = continuation
+  }
+
+  /// Retain the listener tokens for the life of the wait (dropped in finish).
+  func store(photoToken: AnyListenerToken?, errorToken: AnyListenerToken?) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !didResume else { return }
+    self.photoToken = photoToken
+    self.errorToken = errorToken
+  }
+
+  /// Retain the timeout task so finish() can cancel it; if the capture
+  /// already finished before this is called, cancel the task immediately.
+  func storeTimeout(_ task: Task<Void, Never>) {
+    lock.lock()
+    let alreadyDone = didResume
+    if !alreadyDone { timeoutTask = task }
+    lock.unlock()
+    if alreadyDone { task.cancel() }
+  }
+
+  /// Resume the continuation exactly once; later calls are no-ops.
+  func finish(_ result: Result<Data, Error>) {
+    lock.lock()
+    if didResume {
+      lock.unlock()
+      return
+    }
+    didResume = true
+    let task = timeoutTask
+    photoToken = nil
+    errorToken = nil
+    timeoutTask = nil
+    lock.unlock()
+    task?.cancel()
+    continuation.resume(with: result)
   }
 }

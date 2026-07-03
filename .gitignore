@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Real app config (server URL + shared secret) — this repo is public, so the
+# real file stays local-only; commit only Secrets.swift.example.
+ios/LabelLens/Secrets.swift
 *.p8
 *.p12
 *.cer
@@ -26,8 +29,11 @@ timeline.xctimeline
 playground.xcworkspace
 .build/
 Pods/
-*.xcworkspace
-!default.xcworkspace
+# NOTE: do NOT ignore *.xcworkspace wholesale - that would also exclude
+# LabelLens.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved,
+# which pins Swift Package versions (incl. the Meta toolkit) and must be
+# committed so CI builds are reproducible. User-specific bits inside a
+# workspace are already covered by the xcuserdata/ and *.xcuserstate rules.
 Carthage/Build/
 fastlane/report.xml
 fastlane/Preview.html
@@ -55,7 +61,6 @@ env/
 .DS_Store
 .AppleDouble
 .LSOverride
-Icon
 ._*
 .Spotlight-V100
 .Trashes

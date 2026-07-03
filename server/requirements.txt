@@ -1,3 +1,8 @@
-flask
-anthropic
-python-dotenv
+# Pinned so a fresh `pip install` on the EC2 box months from now can't silently
+# pull a breaking major (the anthropic SDK is still 0.x and treats minor bumps
+# as potentially breaking, so it's pinned tight).
+flask~=3.1
+anthropic==0.102.0
+python-dotenv~=1.0
+# Production process manager referenced in README's EC2 deploy step.
+gunicorn~=23.0

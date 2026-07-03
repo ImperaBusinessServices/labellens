@@ -37,6 +37,13 @@ struct ProfileSetupView: View {
       }
       .navigationTitle("LabelLens Profile")
       .onAppear(perform: load)
+      // Clear the "Saved." confirmation once the user edits again, so it
+      // never implies unsaved edits are already saved. One modifier over all
+      // four fields (so adding a field can't be forgotten), using the
+      // one-parameter closure form that compiles on pre-iOS-17 targets.
+      .onChange(of: [allergiesText, medicationsText, conditionsText, dietGoalsText]) { _ in
+        didSave = false
+      }
     }
   }
 
