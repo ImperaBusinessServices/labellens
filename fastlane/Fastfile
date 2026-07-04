@@ -56,9 +56,13 @@ platform :ios do
     # app's entitlements declare (universal-link pairing callback). produce is
     # not idempotent — it raises if the app already exists — so a re-run is
     # tolerated rather than fatal.
+    # produce does NOT take an `api_key:` param — it auto-uses the App Store
+    # Connect API key set by app_store_connect_key above (via Spaceship). Only
+    # tolerate the "app already exists" case; re-raise anything else (e.g. a
+    # missing-agreement or auth error) so the run fails loudly instead of
+    # silently skipping app registration.
     begin
       produce(
-        api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
         app_identifier: "com.steelblade.labellens",
         app_name: "LabelLens",
         sku: "labellens-ios-001", # any unique-per-account string; required by produce.
@@ -68,7 +72,8 @@ platform :ios do
         }
       )
     rescue => e
-      UI.important("produce step skipped (app likely already registered): #{e.message}")
+      raise unless e.message =~ /already exists|already been used|already taken/i
+      UI.important("produce: app already registered, continuing: #{e.message}")
     end
 
     # Auth to the private match repo is via the SSH deploy key (workflow sets it
