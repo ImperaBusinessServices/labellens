@@ -25,7 +25,8 @@ platform :ios do
       key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"],
       issuer_id: ENV["APP_STORE_CONNECT_API_ISSUER_ID"],
       key_content: ENV["APP_STORE_CONNECT_API_KEY_CONTENT"],
-      is_key_content_base64: true
+      is_key_content_base64: true,
+      set_spaceship_token: true # wire the key into Spaceship so ConnectAPI calls use it
     )
   end
 
@@ -56,24 +57,33 @@ platform :ios do
     # app's entitlements declare (universal-link pairing callback). produce is
     # not idempotent — it raises if the app already exists — so a re-run is
     # tolerated rather than fatal.
-    # produce does NOT take an `api_key:` param — it auto-uses the App Store
-    # Connect API key set by app_store_connect_key above (via Spaceship). Only
-    # tolerate the "app already exists" case; re-raise anything else (e.g. a
-    # missing-agreement or auth error) so the run fails loudly instead of
-    # silently skipping app registration.
-    begin
-      produce(
-        app_identifier: "com.steelblade.labellens",
-        app_name: "LabelLens",
-        sku: "labellens-ios-001", # any unique-per-account string; required by produce.
-        language: "en-US",
-        enable_services: {
-          associated_domains: "on"
-        }
+    bundle_identifier = "com.steelblade.labellens"
+
+    # Register the App ID (bundle identifier) directly via the App Store Connect
+    # API. We use ConnectAPI rather than `produce` because produce's
+    # Developer-Portal path demanded an interactive Apple ID username even with
+    # the API key set; ConnectAPI reliably authenticates with the key.
+    existing = Spaceship::ConnectAPI::BundleId.all.find { |b| b.identifier == bundle_identifier }
+    if existing.nil?
+      Spaceship::ConnectAPI::BundleId.create(
+        name: "LabelLens",
+        identifier: bundle_identifier,
+        platform: "IOS"
       )
+      UI.success("Registered App ID #{bundle_identifier}")
+    else
+      UI.message("App ID #{bundle_identifier} already registered")
+    end
+
+    # Enable the Associated Domains capability the app's entitlements declare.
+    # Non-fatal: the cert + profile still get created without it, and it can be
+    # added later if this call's API shape differs across fastlane versions.
+    begin
+      bundle = Spaceship::ConnectAPI::BundleId.all.find { |b| b.identifier == bundle_identifier }
+      bundle.create_capability("ASSOCIATED_DOMAINS") if bundle
+      UI.success("Associated Domains capability enabled")
     rescue => e
-      raise unless e.message =~ /already exists|already been used|already taken/i
-      UI.important("produce: app already registered, continuing: #{e.message}")
+      UI.important("Associated Domains capability not set (continuing): #{e.message}")
     end
 
     # Auth to the private match repo is via the SSH deploy key (workflow sets it
@@ -84,7 +94,7 @@ platform :ios do
       readonly: false, # CREATE the cert + profile and push them to the match repo.
       git_url: ENV["MATCH_GIT_URL"],
       api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
-      app_identifier: ["com.steelblade.labellens"]
+      app_identifier: [bundle_identifier]
     )
   end
 
