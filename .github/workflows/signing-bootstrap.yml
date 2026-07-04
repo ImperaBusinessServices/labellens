@@ -13,8 +13,10 @@
 #   APP_STORE_CONNECT_API_KEY_ID       - the key's Key ID
 #   APP_STORE_CONNECT_API_ISSUER_ID    - the Issuer ID from the Keys page
 #   APP_STORE_CONNECT_API_KEY_CONTENT  - the .p8 file contents, base64-encoded
-#   MATCH_GIT_URL                      - HTTPS URL of the private match repo
-#   MATCH_GIT_BASIC_AUTHORIZATION      - base64 "user:token" for that repo
+#   MATCH_GIT_URL                      - SSH URL of the private match repo
+#                                        (git@github.com:owner/repo.git)
+#   MATCH_DEPLOY_KEY                   - SSH private key of a deploy key scoped
+#                                        to ONLY the match repo (write access)
 #   MATCH_PASSWORD                     - passphrase that encrypts the match repo
 
 name: Signing bootstrap (one-time)
@@ -51,6 +53,20 @@ jobs:
       - name: Install gems (fastlane)
         run: bundle install
 
+      # Load the scoped SSH deploy key so match can clone/push the private
+      # signing repo. The key can reach ONLY that one repo. GitHub's SSH host
+      # key is pinned (no trust-on-first-use).
+      - name: Configure SSH deploy key (signing repo access)
+        env:
+          MATCH_DEPLOY_KEY: ${{ secrets.MATCH_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MATCH_DEPLOY_KEY" > ~/.ssh/match_deploy_key
+          chmod 600 ~/.ssh/match_deploy_key
+          printf 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n' >> ~/.ssh/known_hosts
+          printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/match_deploy_key\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
       # Secrets scoped to only this step (least privilege) — the same pattern as
       # ios-testflight.yml, so third-party actions above never see the signing
       # material.
@@ -58,7 +74,6 @@ jobs:
         env:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}

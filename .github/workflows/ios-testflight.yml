@@ -88,6 +88,19 @@ jobs:
       - name: Install gems (fastlane)
         run: bundle install
 
+      # Scoped SSH deploy key for the private match repo (readonly fetch here).
+      # Reaches ONLY that repo; GitHub's SSH host key is pinned.
+      - name: Configure SSH deploy key (signing repo access)
+        env:
+          MATCH_DEPLOY_KEY: ${{ secrets.MATCH_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MATCH_DEPLOY_KEY" > ~/.ssh/match_deploy_key
+          chmod 600 ~/.ssh/match_deploy_key
+          printf 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n' >> ~/.ssh/known_hosts
+          printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/match_deploy_key\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
       # Secrets.swift is git-ignored (this is a public repo), so CI recreates
       # it from Actions secrets before building. Set VERDICT_SERVER_URL and
       # LABELLENS_SHARED_SECRET in Settings > Secrets and variables > Actions.
@@ -114,7 +127,6 @@ jobs:
         env:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}

@@ -47,6 +47,15 @@ same page at any time, so nothing permanent is exposed.
    It registers the App ID, enables the Associated Domains capability, creates
    the distribution certificate + provisioning profile, and pushes them into the
    private repo.
+
+   > ⚠️ **Right after this runs, re-scope the Phorest deploy account.** The
+   > bootstrap's `produce` step creates the **LabelLens** app record in App Store
+   > Connect. The salon vendor's `deploy@zanadoo.me` user currently has "All
+   > Apps" access (only because Eighteen Eight was the sole app), so a newly
+   > created LabelLens would automatically become visible to them. As soon as
+   > LabelLens exists: App Store Connect → Users and Access → People →
+   > **Deploy User** → App Access, and make sure **LabelLens is unchecked**
+   > (leave only "Eighteen Eight"). See `brain/next.md` for the full context.
 4. Run **iOS TestFlight** — it builds the signed app and uploads it to
    TestFlight, where it lands on Keith's iPhone like any beta app.
 
