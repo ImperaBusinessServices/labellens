@@ -81,14 +81,14 @@
 		     Domains entitlement (not a CFBundleURLTypes/CFBundleURLSchemes
 		     entry - "https" is a system-reserved scheme apps can't claim
 		     that way) for .onOpenURL to receive this callback. See
-		     LabelLens.entitlements (applinks:remagent001.github.io) - it
+		     LabelLens.entitlements (applinks:imperabusinessservices.github.io) - it
 		     still needs to be wired into the Xcode project's Signing &
 		     Capabilities once that project exists, plus a hosted
 		     apple-app-site-association file, and confirmed on a real
 		     device, since none of that was covered by the grounded sample
 		     code (which only showed custom URL schemes). -->
 		<key>AppLinkURLScheme</key>
-		<string>https://remagent001.github.io/glass-apps/labellens</string>
+		<string>https://imperabusinessservices.github.io/glass-apps/labellens</string>
 		<key>MetaAppID</key>
 		<string>4433927443527620</string>
 		<key>ClientToken</key>
