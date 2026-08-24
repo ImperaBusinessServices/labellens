@@ -157,6 +157,7 @@ platform :ios do
 
     upload_to_testflight(
       api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+      app_identifier: bundle_identifier,
       skip_waiting_for_build_processing: true,
       distribute_external: false
     )
