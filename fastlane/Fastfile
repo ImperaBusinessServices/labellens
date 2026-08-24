@@ -101,4 +101,53 @@ platform :ios do
       distribute_external: false
     )
   end
+
+  desc "Manually build Total Recall with LabelLens's existing distribution certificate"
+  lane :ship_recall do
+    app_store_connect_key
+    bundle_identifier = "com.steelblade.recall"
+
+    bundle = Spaceship::ConnectAPI::BundleId.all.find { |item| item.identifier == bundle_identifier }
+    if bundle.nil?
+      Spaceship::ConnectAPI::BundleId.create(
+        name: "Recall",
+        identifier: bundle_identifier,
+        platform: "IOS"
+      )
+    end
+
+    app = Spaceship::ConnectAPI::App.all.find { |item| item.bundle_id == bundle_identifier }
+    if app.nil?
+      Spaceship::ConnectAPI::App.create(
+        name: "Recall - Memory Assistant",
+        version_string: "0.1.0",
+        sku: "recall-ios-2026",
+        primary_locale: "en-US",
+        bundle_id: bundle_identifier,
+        platforms: ["IOS"]
+      )
+    end
+
+    match(
+      type: "appstore",
+      readonly: false,
+      git_url: ENV["MATCH_GIT_URL"],
+      api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+      app_identifier: [bundle_identifier]
+    )
+
+    build_app(
+      project: "recall-source/mobile/RecallMobile.xcodeproj",
+      scheme: "RecallMobile",
+      export_method: "app-store",
+      output_directory: "recall-build",
+      output_name: "Recall.ipa"
+    )
+
+    upload_to_testflight(
+      api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+  end
 end
