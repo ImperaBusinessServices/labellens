@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ImperaBusinessServices/total-recall
-          ref: 16a2ad93fc133aaab68414ca3fad07f104b53e92
+          ref: d6247f7eedc3784ffe3a07517d05eba32b3f8767
           path: recall-source
           ssh-key: ${{ secrets.RECALL_SOURCE_KEY }}
       - uses: maxim-lobanov/setup-xcode@v1
