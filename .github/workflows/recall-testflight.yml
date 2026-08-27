@@ -1,1 +1,58 @@
-name: Recall TestFlight bridge  on:   workflow_dispatch:  jobs:   ship-recall:     name: Sign and upload Recall     runs-on: macos-26     timeout-minutes: 60     steps:       - name: Check out LabelLens signing tools         uses: actions/checkout@v4       - name: Check out Recall at the reviewed commit         uses: actions/checkout@v4         with:           repository: ImperaBusinessServices/total-recall           ref: d54ad7200033cd4a1cfd9798fe5df9cf935794fa           path: recall-source           ssh-key: ${{ secrets.RECALL_SOURCE_KEY }}       - uses: maxim-lobanov/setup-xcode@v1         with:           xcode-version: "26.6"       - name: Generate Recall's Xcode project         run: brew install xcodegen && cd recall-source/mobile && xcodegen generate       - uses: ruby/setup-ruby@v1         with:           ruby-version: "3.3"           bundler-cache: false       - run: bundle install       - name: Configure LabelLens signing vault access         env:           MATCH_DEPLOY_KEY: ${{ secrets.MATCH_DEPLOY_KEY }}         run: |           mkdir -p ~/.ssh           printf '%s\n' "$MATCH_DEPLOY_KEY" > ~/.ssh/match_deploy_key           chmod 600 ~/.ssh/match_deploy_key           ssh-keyscan github.com >> ~/.ssh/known_hosts           printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/match_deploy_key\n  IdentitiesOnly yes\n' >> ~/.ssh/config       - name: Build and upload Recall         env:           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}           RECALL_KEYCHAIN_PASSWORD: ${{ secrets.MATCH_PASSWORD }}         run: bundle exec fastlane ship_recall       - name: Upload logs on failure         if: failure()         uses: actions/upload-artifact@v4         with:           name: recall-testflight-bridge-logs           path: |             recall-build/**/*.log             fastlane/report.xml             *.log           if-no-files-found: ignore
+name: Recall TestFlight bridge
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ship-recall:
+    name: Sign and upload Recall
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Check out LabelLens signing tools
+        uses: actions/checkout@v4
+      - name: Check out Recall at the reviewed commit
+        uses: actions/checkout@v4
+        with:
+          repository: ImperaBusinessServices/total-recall
+          ref: d54ad7200033cd4a1cfd9798fe5df9cf935794fa
+          path: recall-source
+          ssh-key: ${{ secrets.RECALL_SOURCE_KEY }}
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.6"
+      - name: Generate Recall's Xcode project
+        run: brew install xcodegen && cd recall-source/mobile && xcodegen generate
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+      - run: bundle install
+      - name: Configure LabelLens signing vault access
+        env:
+          MATCH_DEPLOY_KEY: ${{ secrets.MATCH_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MATCH_DEPLOY_KEY" > ~/.ssh/match_deploy_key
+          chmod 600 ~/.ssh/match_deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/match_deploy_key\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+      - name: Build and upload Recall
+        env:
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          RECALL_KEYCHAIN_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        run: bundle exec fastlane ship_recall
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recall-testflight-bridge-logs
+          path: |
+            recall-build/**/*.log
+            fastlane/report.xml
+            *.log
+          if-no-files-found: ignore
